@@ -1,0 +1,2002 @@
+
+		
+        
+        .sect "sc"
+ 
+        .include	main.h        
+
+       	.include	sin_tbl.inc
+        
+        .include	atg_tbl.inc
+  
+
+sincos:	
+        sfl
+		sach	index, 7
+		and		#1FFh
+		sacl	rest, 6
+		lt		rest
+		lacc	#sin_table
+		add		index
+		tblr	sy1
+		add		#1
+		tblr	sy2
+		add		#63
+		tblr	cy1
+		add		#1
+		tblr	cy2
+		lacc	cy2, 16
+		sub		cy1, 16
+		sach	dcy
+		lacc	sy2, 16
+		sub		sy1, 16
+		sach	dsy
+		mpy		dsy
+		lacc	sy1, 16
+		mpya	dcy
+		sach	sinx
+		lacc	cy1, 16
+		apac
+		sach	cosx
+		ret
+
+
+        
+fi_pwm:                 
+						ldp     #pwm1_page
+                        lacl	  magnitude
+                        sub     #3300				;   #2100         
+;                       sub     #31000         
+                        bcnd    fin , LEQ
+                        splk    #3300, magnitude	;	#2100 
+;                       splk    #31000 , magnitude
+fin:
+
+				;splk	#10000, magnitude
+				;bldd    #(pwm1_offset2+val0), magnitude
+;			    lacc	val0
+;				sacl	magnitude, 5
+
+pwm_start:
+        		spm     1       ;��� ������ - ������������ ������
+        		clrc    OVM
+
+        		clrc   SXM
+extra: 
+;         lacc	fi
+;         add	#10
+         ;add	#0   ;��� �������� ������� ���������: �=2 �*�, ��� magnituda=14000,Ubs=27,1�,Ibs=1,08�
+;         sacl	fi
+;----------------------------------------------------------------
+;       ������ ������ ������� � ���� ������ �������
+;----------------------------------------------------------------        
+        lacc    fi, 16          ;������� �������� ������������
+                        ;��� ����� ����� �����
+        add     #5              ; �������������� 5
+        bcnd    negative2, LT
+        or      #8000h, 16      ;������������ ��������� ������������� �����
+        sub     #3
+negative2:       add     #5556h, 15
+        bcnd    sector_found2, GEQ
+        sub     #1
+        add     #5554h, 15
+        bcnd    sector_found2, GEQ
+        sub     #1
+        add     #5556h, 15
+sector_found2:
+        sacl    m       ;����� �������
+        sach    eta     ;���� ������� � ������� 60 �� ������������ ������� ��������
+;------------------------------------------------------------------------------
+; ������ ����������� � ������������� �������� (������� �� ����)
+;------------------------------------------------------------------------------
+        lacl    eta
+        call    sincos  ;� ������� sinx � cosx �� �������� pwm1_page
+
+        lt      magnitude
+        mpy     cosx     ; cosx(eta)
+        pac
+        mpy     sinx     ; sinx(eta)
+        sph     sinx     ;��� ������������� ������
+        lt      sinx             ;��� ������������� ������
+        mpy     inv_sqrt_3      ;49E7h
+        spac
+        sach    gamma_m2
+        pac
+        sach    gamma_m1, 1
+;------------------------------------------------------------------------------
+;�������� � ���� ��� �������� CMPR
+;------------------------------------------------------------------------------
+limited:
+        lt      k_u             ;� k_u ��������� #period+1
+        mpy     gamma_m2
+        sph     gamma_m2
+        mpy    gamma_m1
+        sph     gamma_m1
+
+;------------------------------------------------------------------------------
+; ����������� �� 1  � 998
+;------------------------------------------------------------------------------
+        lacc    gamma_m2
+        sacl    gamma_m2    ; ��������� Con
+
+        bcnd    all_ok_1, NEQ   ; �������� �� 0
+        splk    #1, gamma_m
+all_ok_1:
+        lacc    gamma_m1
+        bcnd    all_ok_2, NEQ   ;�������� �� 0
+        add     #1
+        sacl    gamma_m1
+all_ok_2:
+		lacc	k_u
+        sub     gamma_m1
+        sub     gamma_m2
+        ror
+        sacl    gamma_m0
+        bcnd    all_ok_3, NEQ   ;�������� �� 0
+        add     #1
+        sacl    gamma_m0
+all_ok_3:
+        lacc    m, 2
+        ;and     #0000000000001110b
+        add     #gamma1_2
+        bacc
+gamma1_2:      
+
+		bldd    gamma_m2, #(pwm1_offset+gamma_m)
+		b       end_gamma1_2
+		bldd    gamma_m1, #(pwm1_offset+gamma_m)
+		b       end_gamma1_2
+		bldd    gamma_m2, #(pwm1_offset+gamma_m)
+		b       end_gamma1_2
+		bldd    gamma_m1, #(pwm1_offset+gamma_m)
+		b       end_gamma1_2
+		bldd    gamma_m2, #(pwm1_offset+gamma_m)
+		b       end_gamma1_2
+		bldd    gamma_m1, #(pwm1_offset+gamma_m)	
+end_gamma1_2:
+
+		ldp     #ev_page
+		splk	#0000011001100110b, actr
+		;SPLK 	#0000100110011001b, ACTR 
+********************************************************************
+** Determine channel toggling sequence and load compare registers **
+** Input: s(0-5)-sector number **
+** cmp_0(0.25C0Tp), cmp_1(0.5C1Tp), cmp_2(0.5C2Tp) **
+** Output: compare values in compare registers CMPR1,2,3 **
+********************************************************************
+		ldp     #pwm1_page
+		MAR 	*,AR2
+		LACC    #first
+		ADD 	m 				
+		TBLR 	temp0 
+		LAR 	AR2, temp0 
+		LACC 	gamma_m0   ;cmp_0
+		SACL 	* 
+		LACC 	#second
+		ADD 	m 
+		TBLR 	temp1 
+		LAR 	AR2, temp1 
+		LACC 	gamma_m0
+		ADD 	gamma_m   ;cmp_1
+		SACL 	*
+		 
+		LACC 	#7419h
+		SUB 	temp0
+		ADD 	#7418h
+		SUB 	temp1
+		ADD 	#7417h
+		SACL 	temp2
+		LAR 	AR2, temp2
+		LACC 	gamma_m0 
+		ADD 	gamma_m1
+		ADD 	gamma_m2
+		SACL 	* 
+
+end_of_load:                
+        		clrc    SXM
+        ret
+        
+
+arc_tg:	      	
+                        setc    SXM
+                        mar     *, AR7
+                        lar     AR7,#angl_case0
+                        lacc    temp                    ;Usin
+                        bcnd    p11, GEQ         ;������ ���
+                        adrk    #5                      ;sinx<=0
+                        abs
+                        sacl    temp
+p11:
+                        lacc    temp+1          ;Ucos
+                        bcnd    p21, GEQ
+                        adrk    #10                     ;cosx<=0
+                        abs
+                        sacl    temp+1
+p21:
+                        sub     temp                    ;cosx-sin
+                        bcnd    p31,GEQ          ;���� cosx=>sinx �� sinx/cos
+                        lacc    temp+1,16         ;cosx/sin
+                        rpt     #15                     ;�������
+                        subc    temp
+                        adrk    #20             ;cosx<sin
+                        b       p41
+p31:                    lacc  temp,16   ;sinx/cos
+                        rpt     #15
+                        subc    temp+1
+p41:                                             ;tg - � ���,
+;------------------------------------------------------------------------------
+; �������-�������� ������������ ����������� � ��������� 0..45��.
+;���������������, ��� ������� ������ ����� �� 0 �� FFFF
+;------------------------------------------------------------------------------
+                and     #0ffffh
+                sach    index, 3        ;8 ���
+                and     #01fffh
+				sacl    rest, 3
+                lt      rest
+                lacc    #atg_table
+                add     index
+                tblr    atg1
+                add     #1
+                tblr    atg2
+                lacl    atg2
+                sub     atg1
+                sacl    datg
+                mpyu	datg
+                pac
+                add     atg1, 16        ;32 ��������� ���� - � ���.
+                sach    atgx
+;arctg � ���� 45�������� ���������
+; ���������� ������� ����
+                        sar     AR7,(temp+1)    ;�������� ������
+                        lacl    temp+1
+                        bacc
+angl_case0:             lacc    #0h			;0gr+
+                        add     atgx
+                        b       angl_out0                ;5 ����� 1 ��� CASE
+angl_case10:            lacc    #0000h			;360gr-
+                        sub     atgx
+                        b       angl_out0
+angl_case20:            lacc    #8000h			;180gr-
+                        sub     atgx
+                        b       angl_out0
+angl_case30:            lacc    #8000h			;180gr+
+                        add     atgx
+                        b       angl_out0
+angl_case40:            lacc    #4000h			;0gr-
+                        sub     atgx
+                        b       angl_out0
+angl_case50:            lacc    #0C000h			;270gr+
+                        add     atgx
+                        b       angl_out0
+angl_case60:            lacc    #4000h  		;90gr+
+                        add     atgx
+                        b       angl_out0
+angl_case70:            lacc    #0C000h			;270gr-
+                        sub     atgx
+angl_out0:              sacl    temp            ;���� ��������� ������ ���������
+                        lacl    temp            ;��������� � ������������
+                	    sacl    atgxx
+                	    clrc    SXM 
+		                mar     *,AR1
+		                RET  
+
+
+_adc:    
+         ;setc	XF
+         mar  * , AR1  
+         sst  #1 , *+
+         sst  #0 , *+
+         sach *+
+         sacl *+
+         spm  0
+         sph  *+ ;save PREG
+         spl  *+ 
+         mpy  #1
+         spl  *+ ;save TREG
+
+
+     ;��������� ������ ��� ��������������
+    
+       ;ldp    #0e1h
+       ;lacc   pbdatdir
+       ;or     #0040h
+       ;sacl   pbdatdir
+         
+    
+    
+    ldp     #adc_page
+	lacl    adctrl1
+;	splk    #0111100100000000b,adctrl1  ;
+	;����� �����-����� ������� � ������, ������������� ����������� ������ ��� ��������
+	;�������� ���� ��������� SXM
+           	    clrc    SXM 
+                and     #0000000000001110b
+                add     #case_beg
+                        bacc
+		;����� �� ������ ������������ ������ ���
+case_beg:      
+
+	b       READ_Idt	;IAC0
+	b       READ_Iz  	;IAC1
+	b       READ_Ia		;IAC2
+	b       READ_Ib  	;IAC3
+	b       READ_Ic		;IAC4
+	b       READ_Uk		;IAC5
+	b       READ_Vdp	;IAC6 
+	b       READ_Upit	;IAC7
+
+
+READ_Iz:          ;������ ������ 0
+       
+        ldp    #adc_page
+        
+        clrc    SXM
+        
+        lacl    adcfifo1	 ;����� 1 (�������������)
+        lacc    adcfifo2, 10 ;����� 1 (���������� �� ��. ����.)
+        bit		adcfifo1, 5
+        bit		adcfifo2, 5
+                
+        ldp     #pwm1_page
+		sach    Iz
+        
+        ;b		kivadc_ok
+        ;b		kiv_st4
+        
+		setc	SXM
+		lacc	Flag4
+		bcnd	kiv_per1, EQ
+		and		#10b
+		bcnd	kiv_st4, EQ
+		b		kiv_st5
+kiv_per1:
+		lacc	per
+		add		#1
+		sacl	per
+		sub		#150
+		bcnd	kiv_per, LT
+		splk	#0, per
+		lacc	per2
+		add		#1
+		sacl	per2
+		sub		#100
+		bcnd	kiv_per, LT
+		splk	#0, per2
+		call	kiv_actr
+		lacc	per3
+		add		#1
+		sacl	per3
+		;sub		#5
+		sub		#3
+		bcnd	kiv_per, NEQ
+		splk	#1, Flag4
+		;splk	#100, per2
+		b		kiv_per
+kiv_st4:		
+		clrc    SXM
+		lacc	gamma2
+		;add		#10
+		add		nS3
+		sacl	gamma2
+		
+		lacc	st10
+		sub		#1		
+		sacl	st10
+		bcnd	kiv_st, NEQ		
+		splk	#10, st10
+		;lacc	gamma2
+		;add		#1
+		;sacl	gamma2
+;       ������ ������ ������� � ���� ������ �������		
+		lacc    gamma2, 16	;������� �������� ������������
+	                        ;��� ����� ����� �����
+        add     #5			; �������������� 5
+        bcnd    negative, LT
+        or      #8000h, 16	;������������ ��������� ������������� �����
+        sub     #3
+negative:
+		add     #5556h, 15
+        bcnd    sector_found, GEQ
+        sub     #1
+        add     #5554h, 15
+        bcnd    sector_found, GEQ
+        sub     #1
+        add     #5556h, 15
+sector_found:
+        sacl    nS       ;����� �������
+        sach    eta     ;���� ������� � ������� 60 �� ������������ ������� ��������
+;       END ������� ������ ������� � ���� ������ �������
+		;splk	#1, nS
+		;splk	#1DDDh, eta
+kiv_st:
+		setc	SXM
+		lacc	eta
+		sub		#1092
+		sacl	eta
+		bcnd	kiv_st2, GT
+		lacc	nS2
+		sub		nS, 3
+		sacl	sht1
+		b		kiv_st3
+kiv_st2:
+		lacc	nS2
+		sub		nS, 3
+		bcnd	kiv_st21, EQ
+		sub		#1000b
+		sacl	sht1
+		b		kiv_st3
+kiv_st21:
+		splk	#40, sht1
+kiv_st3:		
+		call	kiv_actr3
+		
+		lacc	eta
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		ror
+		sacl	nS_1
+		bldd	#padatdir, ttt
+		lacc	ttt
+		and		#1111111111111100b
+		or		nS_1
+		sacl	ttt
+		bldd	ttt, #padatdir
+		
+		lacc	per
+		add		#1
+		sacl	per
+		sub		#200
+		bcnd	kiv_per, LT
+		splk	#0, per
+		lacc	per2
+		add		#1
+		sacl	per2
+		sub		#100
+		bcnd	kiv_per, LT
+		splk	#800, per2
+		lacc	schet5
+		sub		#1
+		sacl	schet5
+		bcnd	kiv_per, GT
+		splk	#5, schet5
+		lacc	nS3
+		add		#1
+		sacl	nS3
+		lacc	schet4
+		sub		#1
+		sacl	schet4
+		bcnd	kiv_per, GT
+		splk	#34, schet4
+		splk	#11b, Flag4
+kiv_per:		
+		bldd	per2, #cmpr1
+		bldd	per2, #cmpr2
+		bldd	per2, #cmpr3
+		
+		ldp       #work_page
+		splk      #1 , adcf          ;��������� ����� ������� ADC
+		b		exit
+				
+kiv_st5:		
+		clrc    SXM
+		lacc	sht1
+		ror
+		ror
+		and     #00000000000001110b
+		add		#kivadc
+		bacc
+kivadc:		
+		b		kivadc_c
+		b		kivadc_b
+		b		kivadc_a
+		b		kivadc_c
+		b		kivadc_b
+		b		kivadc_a
+kivadc_a:
+        ldp    #adc_page
+        splk	#0101101100000101b , adctrl1	;������ ��� 2 ������ (Ia)
+		b		kivadc_ok
+kivadc_b:
+		ldp    #adc_page
+		splk    #0101101100000111b , adctrl1	;������ ��� 3 ������ (Ib)
+		b		kivadc_ok
+kivadc_c:
+		ldp		#adc_page
+		splk    #0101101100001001b , adctrl1	;������ ��� 4 ������ (Ic)
+kivadc_ok:
+;������ ����������� � ��=1		
+		setc    SXM
+        ldp     #pwm1_page
+		lacc	contr_pit
+        bcnd	exit, EQ
+        lacc	frazgon
+		bcnd	kiv_5, EQ
+        lacc	Flag
+        and		#01b
+        bcnd	kiv_4, EQ
+            ;lacc	val1
+            ;ror
+            ;ror
+            ;ror
+            ;ror
+            ;ror
+            ;sacl	Wz1
+            
+            lacc	frazgon2
+            bcnd	kiv_frazgon21, EQ
+            lacc	contr_rej2
+            and		#1100b
+            bcnd	kiv_intg, EQ
+kiv_frazgon21:
+            lacc	Wz2
+            sub		#1
+            sacl	Wz2
+            bcnd	finscr1, GT
+            splk	#10, Wz2
+kiv_intg:
+            lacc      intscr
+            add       scr_rez
+            sacl      intscr ;� ������������ ����� ���� ������ MAXIN
+            bcnd    otrscr1 , LT		;����������� �����������
+polscr1:
+            sub     #32767
+            bcnd    finscr1, LEQ
+            splk    #32767, intscr
+            b       finscr1
+otrscr1:
+            add     #32767
+            bcnd    finscr1, GEQ
+            splk    #-32767 , intscr
+finscr1: 		;����� �����������, ������ �������� � ������
+
+			;spm       0
+			spm		1
+			lt        intscr    
+			;mpy       #1	;��������� ��� 6 ��� 1�� ���
+            mpy		K2
+            ;mpy		val0
+            sph		ttt
+            lacc	ttt
+            spm		0
+            ;ltp       scr_rez   	 ;� Wz1*intscr - � ����������� 
+            lt		scr_rez
+            ;mpy       #24*1	 ;�������� �� Wz2, ���� ���.�����
+            mpy		Wz1
+            apac			;����a ��������� � ���.�����
+			;������� �����������, ����� ����������� ������� ������
+            sacl      Uscr	
+            bcnd    otrscr2 , LT
+polscr2:
+            sub     #950
+            bcnd    finscr2, LEQ
+            splk    #950, Uscr
+            b       finscr2
+otrscr2:
+            add     #950
+            bcnd    finscr2 , GEQ
+            splk    #-950 , Uscr
+finscr2:      ;Uscr ������������
+		
+		lacc	Uscr
+        bcnd	kiv_1, GT
+        splk	#0, Uqrez
+        b		kiv_2
+kiv_1:
+		bldd	Uscr, #(pwm1_offset+Uqrez)
+kiv_2:
+		lacc	Uqrez
+		sub		#1
+		bcnd	kiv_3, GT
+		splk	#1, ttt
+		bldd	ttt, #cmpr1
+		bldd	ttt, #cmpr2
+		bldd	ttt, #cmpr3
+		
+		b		exit
+kiv_3:		
+		lacc	Uqrez
+		sub		#950
+		bcnd	kiv_4, GT
+		bldd	Uqrez, #cmpr1        
+        bldd	Uqrez, #cmpr2
+        bldd	Uqrez, #cmpr3
+		b		exit
+kiv_4:
+		splk	#950, ttt
+		bldd	ttt, #cmpr1
+		bldd	ttt, #cmpr2
+		bldd	ttt, #cmpr3
+		b		exit				
+kiv_5:
+        lacc	Flag
+        and		#10b
+        bcnd	kiv_4, EQ
+		bldd	#cmpr1, ttt
+		lacc	ttt
+		add		#1
+		sacl	ttt
+		sub		#950
+		bcnd	exit, GEQ
+		bldd	ttt, #cmpr1
+		bldd	ttt, #cmpr2
+		bldd	ttt, #cmpr3
+		
+		;ldp       #work_page
+		;splk      #1 , adcf          ;��������� ����� ������� ADC
+
+        b       exit
+                     
+
+READ_Ia:             ;������ ������ 2
+        
+        ldp    #adc_page
+        
+        clrc    SXM
+               
+        lacl    adcfifo2        ;����� 2 (�������������)
+        lacc    adcfifo1 , 9    ;����� 2, ��� 1 ���� A
+       
+        ldp     #pwm1_page
+        sach    Ia , 1          ;75A=512
+        sach    Is , 1
+        
+       
+		setc    SXM        
+
+		ldp       #work_page
+		splk      #1 , adcf          ;��������� ����� ������� ADC
+
+		b       exit
+
+READ_Ib:                  ;������ ������ 3
+
+        ldp    #adc_page
+        
+        clrc    SXM
+
+		lacl    adcfifo2		;����� 3 (�������������)
+		lacc    adcfifo1 , 9	;����� 3, ��� ���� B
+
+    	ldp     #pwm1_page
+        sach    Ib , 1
+        sach    Is , 1
+        
+		setc    SXM
+        
+        ldp       #work_page
+		splk      #1 , adcf          ;��������� ����� ������� ADC
+
+		b       exit
+
+
+READ_Ic:      ;������ ������ 4
+        
+        ldp    #adc_page
+        
+        clrc    SXM
+        
+        lacl    adcfifo2        ;����� 4 (�������������)
+        lacc    adcfifo1 , 9    ;����� 4, ��� ���� �
+
+        ldp     #pwm1_page
+        sach    Ic , 1
+        sach    Is , 1
+        
+        setc    SXM
+
+	    ldp       #work_page
+   	    splk      #1 , adcf          ;��������� ����� ������� ADC	
+        
+		b       exit
+
+
+READ_Uk:      ;������ ������ 5
+        
+        ldp    #adc_page
+        
+        clrc    SXM
+        
+        lacl    adcfifo1        ;����� 5 (�������������)
+        lacc    adcfifo2, 10	    ;����� 5, ������ �����������
+        
+        
+        b       exit  
+        
+        
+READ_Vdp:      ;������ ������ 6
+        
+        ldp    #adc_page
+        
+        clrc    SXM
+                
+        lacl    adcfifo1        ;����� 6 (�������������)
+        lacc    adcfifo2 , 10    ;����� 6 
+
+        
+        b       exit
+       
+       
+READ_Idt:      ;������ ������ 1
+        
+        ldp    #adc_page
+        
+        clrc    SXM
+        
+        lacl    adcfifo1        ;����� 0 (�������������)
+        lacc    adcfifo2 , 10    ;����� 0
+        ;splk    #0101101100110001b , adctrl1	;������ ��� 11(Idt) � 0 �������
+        
+        ldp     #pwm1_page
+        sach    Idt
+        
+       
+        setc    SXM
+        
+        b       exit      
+       
+
+READ_Upit:                 ;������ ������ 7
+	     
+    	ldp    #adc_page
+             
+        clrc   SXM
+        
+        lacl    adcfifo1        ;����� 7 (�������������)
+        lacc    adcfifo2, 10         ;����� 7, ���������� �������
+		ldp		#ev_page
+        bit 	t1con, 3
+        bcnd	adc_vraschatel, NTC
+        ldp    #adc_page
+        splk    #0101101101000011b , adctrl1	;������ ��� 12 (0) � 1 �������
+        
+adc_vraschatel:
+		ldp     #pwm1_page
+        sach    Upit        
+        
+        setc    SXM
+        
+; begin ��������� ������ ������ ���������
+		setc    SXM
+		ldp		#00E0h
+        bit	    xint2cr, 9
+        bcnd	kiv_edin, TC
+		ldp     #pwm1_page
+		;lacc    sraz2
+		;sub     #1		;��������� �������
+		;sacl    sraz2
+		;bcnd	kiv_xint3, GT
+		lacc	contr_rej
+		and		#10b
+		sacl	contr_rej
+		;splk	#0, sraz2
+        b		kiv_xint3
+kiv_edin:
+		ldp     #pwm1_page
+		;lacc    sraz2
+		;add     #1		;��������� �������
+		;sacl    sraz2
+        ;sub		#100
+		;bcnd	kiv_xint3, LT
+		lacc	contr_rej
+		or		#01b
+		sacl	contr_rej
+		;splk	#100, sraz2
+kiv_xint3:
+        ldp		#00E0h
+        bit	    xint3cr, 9
+        bcnd	kiv_edin2, TC
+		ldp     #pwm1_page
+		;lacc    sraz3
+		;sub     #1		;��������� �������
+		;sacl    sraz3
+		;bcnd	kiv_xint, GT
+		lacc	contr_rej
+		and		#01b
+		sacl	contr_rej
+		;splk	#0, sraz3
+        b		kiv_xint
+kiv_edin2:
+		ldp     #pwm1_page
+		;lacc    sraz3
+		;add     #1		;��������� �������
+		;sacl    sraz3
+        ;sub		#100
+		;bcnd	kiv_xint, LT
+		lacc	contr_rej
+		or		#10b
+		sacl	contr_rej
+		;splk	#100, sraz3
+kiv_xint:
+		ldp     #pwm1_page
+		lacc	contr_rej
+        and		#01b
+        bcnd	kiv_10, EQ
+        lacc	contr_rej
+        and		#10b
+        bcnd	kiv_01, EQ
+kiv_11:
+		lacc	a00
+		sub		#1
+		sacl	a00
+		lacc	a01
+		sub		#1
+		sacl	a01
+		lacc	a10
+		sub		#1
+		sacl	a10
+		lacc	a11
+		add		#1
+		sacl	a11
+		b		xint_ok
+kiv_01:
+        lacc	a00
+		sub		#1
+		sacl	a00
+		lacc	a01
+		add		#1
+		sacl	a01
+		lacc	a10
+		sub		#1
+		sacl	a10
+		lacc	a11
+		sub		#1
+		sacl	a11
+        b		xint_ok
+kiv_10:        
+        lacc	contr_rej
+        and		#10b
+        bcnd	kiv_00, EQ
+        lacc	a00
+		sub		#1
+		sacl	a00
+		lacc	a01
+		sub		#1
+		sacl	a01
+		lacc	a10
+		add		#1
+		sacl	a10
+		lacc	a11
+		sub		#1
+		sacl	a11
+        b		xint_ok
+kiv_00:
+        lacc	a00
+		add		#1
+		sacl	a00
+		lacc	a01
+		sub		#1
+		sacl	a01
+		lacc	a10
+		sub		#1
+		sacl	a10
+		lacc	a11
+		sub		#1
+		sacl	a11
+
+xint_ok:
+xint00_1:
+        lacc	a00
+        sub		#100
+        bcnd	xint00_0, LT
+		splk	#100, a00
+		lacc	contr_temp
+		or		#1000b
+		sacl	contr_temp
+		b		xint01_1
+xint00_0:
+        lacc	contr_temp
+		and		#0111b
+		sacl	contr_temp
+        lacc	a00
+        bcnd	xint01_1, GT
+        splk	#0, a00
+xint01_1:
+        lacc	a01
+        sub		#100
+        bcnd	xint01_0, LT
+		splk	#100, a01
+		lacc	contr_temp
+		or		#0100b
+		sacl	contr_temp
+		b		xint10_1
+xint01_0:
+        lacc	contr_temp
+		and		#1011b
+		sacl	contr_temp
+        lacc	a01
+        bcnd	xint10_1, GT
+        splk	#0, a01
+xint10_1:
+        lacc	a10
+        sub		#100
+        bcnd	xint10_0, LT
+		splk	#100, a10
+		lacc	contr_temp
+		or		#0010b
+		sacl	contr_temp
+		b		xint11_1
+xint10_0:
+        lacc	contr_temp
+		and		#1101b
+		sacl	contr_temp
+        lacc	a10
+        bcnd	xint11_1, GT
+        splk	#0, a10
+xint11_1:
+        lacc	contr_temp
+		or		#0001b
+		sacl	contr_temp
+        lacc	a11
+        sub		#100
+        bcnd	xint11_0, LT
+		splk	#100, a11
+		b		xint_ok2
+xint11_0:
+        lacc	contr_temp
+		and		#1110b
+		sacl	contr_temp
+        lacc	a11
+        bcnd	xint_ok2, GT
+        splk	#0, a11
+xint_ok2:
+		lacc	contr_temp
+		bcnd	xint_ok3, EQ
+		bldd	contr_temp, #(pwm1_offset+contr_rej2)        
+        ;b		kiv_begin
+xint_ok3:
+        ldp		#ev_page
+        bit 	t1con, 3
+        bcnd	xint_ok3_vraschatel, NTC
+		ldp     #pwm1_page
+        lacc	contr_rej2
+        and		#0001b
+        bcnd	kiv_rej0, NEQ
+        lacc	contr_rej2
+        and		#0010b
+        bcnd	kiv_rej1, NEQ
+        lacc	contr_rej2
+        and		#0100b
+        bcnd	kiv_rej2, NEQ
+        lacc	contr_rej2
+        and		#1000b
+        bcnd	kiv_rej3, NEQ
+        ;b		kiv_begin
+kiv_rej0:
+		splk	#0, frazgon
+		splk	#0, frej
+		splk	#0, frazgon2
+		splk	#15000, schet3
+		b		kiv_begin
+kiv_rej1:        
+        splk	#1, frej
+		splk	#1, frazgon
+		splk	#0, frazgon2
+		splk	#15000, schet3
+		lacc	scr1
+        sub		#1333
+        bcnd	kiv_t1, EQ
+        lacc	Flag2
+		sub		#200
+		bcnd	kiv_scr_01, NEQ
+		lacc	K2
+		sub		#1
+		sacl	K2
+		sub		#600
+		bcnd	kiv_K2_4, GT
+		splk	#600, K2
+kiv_K2_4:
+		lacc	Wz3
+		add		#1
+		sacl	Wz3
+		sub		#16
+		bcnd	kiv_Wz1_4, EQ
+		splk	#0, Wz3
+		lacc	Wz1
+		sub		#1
+		sacl	Wz1
+		sub		#1
+		bcnd	kiv_Wz1_4, GT
+		splk	#1, Wz1
+kiv_Wz1_4:
+		lacc	traz_vr
+		sub		#1
+		sacl	traz_vr
+		lacc	traz_vr, 4
+		sacl	traz_vr2
+		lacc	traz_post, 16
+		rpt		#10
+		subc	traz_vr2
+		sacl	scr1
+kiv_scr_01:
+		lacc	scr1
+		and		#0ffffh
+		sub		#444
+		bcnd	kiv_begin, LT		        
+;		splk	#444, scr1
+;		splk	#300, traz_vr
+;		lacc	Flag
+;		and		#10b
+;		bcnd	kiv_t11, NEQ
+;		lacc	Flag5
+;		bcnd	kiv_begin, EQ
+;		splk	#272, maus
+;kiv_t11:
+;		splk	#10b, Flag
+;		splk	#0, frazgon
+		splk	#1, Flag_2
+		splk	#0, frazgon
+		splk	#0, frej
+		splk	#0, frazgon2
+		splk	#15000, schet3
+		b		kiv_begin
+kiv_t1:
+		splk	#1, Flag_2
+		splk	#0, frazgon
+		splk	#0, frej
+		splk	#0, frazgon2
+		splk	#15000, schet3
+		b		kiv_begin
+kiv_rej2:
+        lacc	Flag
+        and		#01b
+        sacl	Flag
+		;splk	#600, K2
+        ;splk	#1, Wz1
+        splk	#1, frazgon
+        splk	#1, frej
+        splk	#1, frazgon2
+        lacc	scr1
+        sub		#444
+        bcnd	kiv_t2, EQ
+		lacc	scr1
+		sub		#1333
+		bcnd	kiv_t21, EQ
+        lacc	Flag2
+		sub		#200
+		bcnd	kiv_begin, NEQ
+		lacc	K2
+		sub		#1
+		sacl	K2
+		sub		#600
+		bcnd	kiv_K2_2, GT
+		splk	#600, K2
+kiv_K2_2:
+		lacc	Wz3
+		add		#1
+		sacl	Wz3
+		sub		#16
+		bcnd	kiv_Wz1_2, EQ
+		splk	#0, Wz3
+		lacc	Wz1
+		sub		#1
+		sacl	Wz1
+		sub		#1
+		bcnd	kiv_Wz1_2, GT
+		splk	#1, Wz1
+kiv_Wz1_2:
+		lacc	traz_vr
+		sub		#1
+		sacl	traz_vr
+		lacc	traz_vr, 4
+		sacl	traz_vr2
+		lacc	traz_post, 16
+		rpt		#10
+		subc	traz_vr2
+		sacl	scr1
+		and		#0ffffh
+		sub		#444
+		bcnd	kiv_begin, LT		        
+kiv_t2:
+		splk	#444, scr1
+        splk	#300, traz_vr
+        splk	#600, K2
+        splk	#1, Wz1
+        b		kiv_begin
+kiv_t21:
+		splk	#0, frazgon
+		b		kiv_begin
+kiv_rej3:
+        lacc	Flag
+        and		#01b
+        sacl	Flag
+        ;splk	#200, K2
+        ;splk	#10, Wz1
+        splk	#1, frazgon
+        splk	#1, frej
+		lacc	scr1
+        sub		#222
+        bcnd	kiv_t3, EQ
+        lacc	scr1
+		sub		#1333
+		bcnd	kiv_t31, EQ
+		lacc	frazgon2
+		bcnd	kiv_frazgon2, NEQ
+        lacc	schet3
+        sub		#1
+        sacl	schet3
+        bcnd	kiv_t2, GT
+kiv_frazgon2:
+		splk	#0, schet3
+		splk	#1, frazgon2
+        lacc	Flag2
+		sub		#200
+		bcnd	kiv_begin, NEQ
+		lacc	K2
+		;add		#3
+		add		#1
+		sacl	K2
+		sub		#800
+		bcnd	kiv_K2_3, LT
+		splk	#800, K2
+kiv_K2_3:
+		lacc	Wz3
+		add		#1
+		sacl	Wz3
+		sub		#12
+		bcnd	kiv_Wz1_3, LEQ
+		splk	#0, Wz3
+		lacc	Wz1
+		add		#1
+		sacl	Wz1
+		sub		#24
+		bcnd	kiv_Wz1_3, LT
+		splk	#24, Wz1
+kiv_Wz1_3:
+		lacc	traz_vr
+		add		#1
+		sacl	traz_vr
+		lacc	traz_vr, 4
+		sacl	traz_vr2
+		lacc	traz_post, 16
+		rpt		#10
+		subc	traz_vr2
+		sacl	scr1
+		and		#0ffffh
+		sub		#222
+		bcnd	kiv_begin, GT		        
+kiv_t3:
+		splk	#222, scr1
+        splk	#600, traz_vr
+		splk	#800, K2
+        splk	#24, Wz1
+		b		kiv_begin
+kiv_t31:
+		splk	#0, frazgon
+		b		kiv_begin
+
+; end ��������� ������ ������ ���������
+
+xint_ok3_vraschatel:
+		ldp     #pwm1_page
+        lacc	contr_rej2
+        and		#0001b
+        bcnd	kiv_rej0_vr, NEQ
+        lacc	contr_rej2
+        and		#0010b
+        bcnd	kiv_rej1_vr, NEQ
+        lacc	contr_rej2
+        and		#0100b
+        bcnd	kiv_rej2_vr, NEQ
+        lacc	contr_rej2
+        and		#1000b
+        bcnd	kiv_rej3_vr, NEQ
+kiv_rej0_vr:
+		ldp     #pwm1_page
+		splk	#1111111111b, ttt
+        bldd	ttt, #ACTR
+		splk	#0, magnitude
+		;splk	#1000, schet
+		;splk	#10, torm
+		splk	#0, Flag_rabota
+		splk	#0, Flag_magnitud_2        
+        b		exit
+kiv_rej1_vr:
+		b		exit
+kiv_rej2_vr:
+kiv_rej3_vr:
+		ldp     #pwm1_page
+		splk	#1111111111b, ttt
+        bldd	ttt, #ACTR
+		splk	#0, magnitude
+		splk	#1, Flag_1
+		;splk	#1000, schet
+		;splk	#10, torm
+		splk	#0, Flag_rabota
+		splk	#0, Flag_magnitud_2        
+        b		exit
+;��������� ������� �������        
+kiv_begin:
+		ldp     #pwm1_page
+		lacc	frej
+		bcnd	otkl, EQ
+		lacc	Upit
+		sub		#500
+		bcnd	dalifgood, GT
+		lacc    sraz		;��. ������� ���������� +27�
+		sub     #70		;����� �� ������� ���������� +27� (3,5��)
+		bcnd    otkl , GT
+		lacc    sraz
+		add     #1		;��������� ������� ���������� +27�
+		sacl    sraz
+        b		kiv_pit
+otkl:        
+        splk	#1111111111b, ttt
+        bldd	ttt, #ACTR
+		splk	#1111101100000000b, ttt
+		bldd	ttt, #pcdatdir
+		splk	#0, contr_pit
+		splk	#0, frazgon
+		splk	#0, intscr
+		splk	#1333, scr1
+		splk	#0, scr2
+		splk	#0, scr_rez
+		splk	#1, contr_scht
+		splk	#0, scht0
+		splk	#148, scht1
+		splk	#148, scht2
+		splk	#148, scht3
+		splk	#0, schet
+        splk	#0, schet2
+        splk	#34, schet4
+        splk	#5, schet5
+        splk	#0, sraz
+        splk	#0, sraz1
+        splk	#16, sht1
+        splk	#111111111111b, sht2
+        splk	#0, sht3
+        splk	#272, maus
+        splk	#0, Wz1
+        splk	#0, Wz2
+        splk	#0, Wz3
+        splk	#0, eds1
+        splk	#11b, contr_rej
+        splk	#0, Flag
+        splk	#1000, Flag2
+        splk	#30000, Flag3
+		splk	#0, Flag4
+		splk	#0, Flag5
+		splk	#0, Flag_eds
+		splk	#0, schet_eds
+        splk	#300, traz_vr
+        splk	#0, gamma2
+        splk	#10, st10
+		splk	#0, ttt
+		bldd	ttt, #cmpr1
+		bldd	ttt, #cmpr2
+		bldd	ttt, #cmpr3
+        splk	#0, per
+        splk	#0, per2
+        splk	#0, per3
+        splk	#6, nS3
+        b		exit
+dalifgood:
+		splk	#0, sraz
+kiv_pit:		        
+		splk	#1111101100001000b, ttt
+		bldd	ttt, #pcdatdir
+		splk	#1, contr_pit
+
+
+        lacc	Flag4
+		bcnd	exit, EQ
+		and		#10b
+        bcnd	exit, EQ
+		lacc	frazgon			
+		;bcnd	kiv_podhvat, NEQ	;������ ������ ������
+		bcnd	kiv_razgon, EQ
+		lacc	Flag
+		and		#01b
+		bcnd	kiv_podhvat, NEQ
+kiv_razgon:		
+;begin razgon		
+        lacc	maus
+        sub		#1
+        sacl	maus
+        sub		schet
+        bcnd	exit, GT
+        call	kiv_actr
+        splk	#272, maus
+        lacc	Flag
+        and		#10b
+        bcnd	kiv_rej20, EQ
+        ;lacc	schet2
+        ;sub		#1
+        ;sacl	schet2
+        ;bcnd	exit, GT
+        ;splk	#2, schet2
+        lacc	schet
+        sub		#1
+        sacl	schet
+        sub		#48
+        bcnd	exit, GT
+        splk	#48, schet
+        splk	#1333, scr1
+        b		kiv_schet2
+kiv_rej20:
+        lacc	contr_rej2
+        and		#1100b
+        bcnd	kiv_schet1, EQ
+        splk	#0, Flag
+        ;lacc	schet
+        ;sub		#78
+        ;bcnd	kiv_dopusk, LT
+        ;lacc	schet2
+        ;sub		#1
+        ;sacl	schet2
+        ;bcnd	exit, GT
+        ;splk	#3, schet2
+;kiv_dopusk:
+        lacc	schet
+        add		#1
+        sacl	schet
+        sub		#198
+        bcnd	exit, LEQ
+        splk	#198, schet
+        splk	#444, scr1
+		splk	#300, traz_vr
+		splk	#0, scr_rez
+;		lacc	contr_rej2
+;        and		#1000b
+;        bcnd	kiv_r3, NEQ	
+		splk	#600, K2
+		splk	#1, Wz1
+		splk	#10000, intscr
+        b		kiv_schet2
+kiv_r3:
+		splk	#100, K2
+		splk	#10, Wz1
+		splk	#25000, intscr
+		b		kiv_schet2
+kiv_schet1:
+        splk	#0, Flag
+        lacc	schet
+        add		#1
+        sacl	schet
+        sub		#48
+        bcnd	exit, LEQ
+        lacc	schet
+        sub		#50
+        bcnd	kiv_min, GEQ
+        splk	#48, schet
+        splk	#1333, scr1
+        splk	#300, traz_vr        
+kiv_schet2:
+		lacc	Is
+		sub		Iz
+		;sub		Upr_postprom
+		sacl	sht3
+		splk	#1, Flag
+		b		exit
+kiv_min:
+		splk	#10b, Flag
+		b		exit
+;end razgon
+kiv_podhvat:
+        lacc	maus
+        sub		#1
+        sacl	maus
+        sub		schet
+        bcnd	exit, GT
+        splk	#0, maus
+;begin podhvat        
+        splk	#0, Flag5
+        bit		Flag_eds, 15
+        bcnd    kiv_eds_schet1, TC
+        bit		Flag_eds, 14
+        bcnd    kiv_eds_schet2, TC
+        b		kiv_sht3
+kiv_eds_schet1:
+		lacc	schet_eds
+		sub		#1
+		sacl	schet_eds
+		bcnd	kiv_eds1, EQ
+		b		kiv_actr2
+kiv_eds_schet2:
+		lacc	schet_eds
+		sub		#1
+		sacl	schet_eds
+		bcnd	kiv_eds2, EQ
+		b		kiv_actr2		        
+kiv_sht3:        
+        lacc	sht3
+        bcnd	kiv_actr1, GEQ
+        lacc	Is
+        sub		Iz
+        ;sub		Upr_postprom
+        sacl	sht3
+        bcnd	kiv_actr2, LT
+		splk	#10b, Flag_eds
+		splk	#10, schet_eds	
+		b		kiv_actr2
+kiv_eds2:
+		splk	#0, Flag_eds
+		splk	#0, schet_eds
+		call	kiv_actr
+		splk	#1, Flag5
+		bit		contr_scht, 15
+		bcnd	kiv_scht1, NTC
+		lacc	contr_scht, 1
+		sacl	contr_scht
+		bldd	scht0, #(pwm1_offset+scht3)
+		b		kiv_scht3
+kiv_scht1:		
+		bit		contr_scht, 14
+		bcnd	kiv_scht2, NTC
+        lacc	contr_scht, 1
+		sacl	contr_scht
+		bldd	scht0, #(pwm1_offset+scht1)
+		b		kiv_scht3
+kiv_scht2:
+		bit		contr_scht, 13
+		bcnd	kiv_scht3, NTC
+		splk	#1, contr_scht
+		bldd	scht0, #(pwm1_offset+scht2)
+kiv_scht3:		
+		splk	#0, scht0
+		lacc	scht1
+		add		scht2
+		add		scht3
+		sacl	scr2
+		lacc	scr2
+		sub		scr1
+		sacl	scr_rez
+;��-���������		
+		setc	SXM
+		lacc	scr_rez
+		bcnd    otr2, LT
+pol2:
+		sub     #1024
+		bcnd    fin2, LEQ
+		splk    #1024, scr_rez
+		b       fin2
+otr2:
+		add     #1024
+		bcnd    fin2, GEQ
+		splk    #-1024, scr_rez
+fin2:
+		b		kiv_actr2
+kiv_actr1:
+        lacc	Is
+        sub		Iz
+        ;sub		Upr_postprom
+        sacl	sht3    
+        bcnd	kiv_actr2, GEQ
+		splk	#01b, Flag_eds
+		splk	#10, schet_eds
+		b		kiv_actr2
+kiv_eds1:		
+		splk	#0, Flag_eds
+		splk	#0, schet_eds
+		call	kiv_actr
+		splk	#1, Flag5
+kiv_actr2:
+		lacc	scht0
+		add		#1
+		sacl	scht0
+
+exit:    
+        ;ldp    #0e1h
+        ;lacc   pbdatdir
+        ;and    #0ffefh
+        ;sacl   pbdatdir
+
+
+notendadc:        
+        
+         mar  * , AR1
+         mar  *-
+         mar  *-
+         spm  0
+         lt   *+
+         mpy  #1  
+         lt   *-
+         mar  *-
+         lph  *-
+         lacl *-
+         add  *-,16
+         lst  #0,*-
+         lst  #1,*
+         ;clrc	XF
+         clrc INTM
+         ret
+
+    
+_tufint1:  
+
+         ;setc	XF
+         mar  * , AR1  
+         sst  #1 , *+
+         sst  #0 , *+
+         sach *+
+         sacl *+
+         spm  0
+         sph  *+ ;save PREG
+         spl  *+ 
+         mpy  #1
+         spl  *+ ;save TREG
+       
+
+        LDP		#00E0h
+        SPLK    #05555h, WD_KEY
+	    SPLK    #0AAAAh, WD_KEY
+        
+        ldp     #ev_page
+        splk    #0200h, evifra          ;����� ����� TUFINT1
+        
+;        ldp		#0
+;        bit	    ifr, 15
+;        splk	#1,		ifr
+;        bcnd	metka_xf1, NTC
+;        setc	XF
+;        ldp		#sys_page
+;	    splk	#0000000000000101b , xint1cr
+;         b		metka_xf
+;metka_xf1:
+;        clrc	XF        
+;metka_xf:
+
+
+        ;b		tufint_vraschatel
+        ldp     #pwm1_page
+        lacc	Flag_1
+        bcnd	proverka, EQ
+        ldp		#work_page
+		splk	#1, F1          ;��������� ����� �������� �� ��������� 1L122
+		bldd	#t1con, t
+		lacc	t
+		and		#40h            ;��������� ������� 1
+		sacl	t
+		bldd	t , #t1con
+		b		torm_1
+proverka:
+        lacc	Flag_2
+        bcnd	proverka_end, EQ
+        ldp		#work_page
+		splk	#1, F2          ;��������� ����� �������� �� ��������� ���������
+		bldd	#t1con, t
+		lacc	t
+		and		#40h            ;��������� ������� 1
+		sacl	t
+		bldd	t , #t1con
+		
+		setc    SXM	
+       
+         mar  * , AR1
+         mar  *-
+         mar  *-
+         spm  0
+         lt   *+
+         mpy  #1  
+         lt   *-
+         mar  *-
+         lph  *-
+         lacl *-
+         add  *-,16
+         lst  #0,*-
+         lst  #1,*
+         ;clrc	XF
+         ;clrc INTM
+         ret
+proverka_end:
+        ldp		#ev_page
+        bit 	t1con, 3
+        bcnd	tufint_vraschatel, NTC
+;!!! tufint 1L122        
+        ldp		#work_page
+	    ;splk	#1000000000000001b , temp_w_p  ;����� �����	
+        splk	#1000000000000101b , temp_w_p
+        bldd	temp_w_p,	#xint1cr
+        
+kiv_acp:        
+        ldp     #adc_page
+        ;splk    #0101101101000011b , adctrl1
+		splk    #0101101100101111b , adctrl1	;������ ��� 10 (Un) � 7 �������
+        
+        setc    SXM
+        ldp     #pwm1_page
+        lacc	frej
+		bcnd	andr2, EQ
+        lacc	contr_pit
+        bcnd	andr2, EQ			;������ �������
+        lacc	frazgon
+        bcnd	andr1, EQ
+        lacc	Flag2
+        sub		#1
+        sacl	Flag2
+        bcnd	kiv_Flag2, GT
+        splk	#200, Flag2
+kiv_Flag2:
+        
+        ;b		andr1        ;!!!
+                
+		lacc	Is
+        sub		Iz
+        abs
+        sacl	eds1
+        
+;FLF  begin2		
+		ldp     #pwm1_page
+		lacc	eds1        
+        sacl	Upr_in
+		
+		setc	SXM
+		spm		01
+		lt		K3
+		mpyu	Upr_proml
+		sph		ttt
+		lacl	ttt
+		mpy		Upr_promh
+		mac		K2_ , Upr_in	;K2_ - � atg_tbl 
+		apac
+		sach	Upr_promh
+		sacl	Upr_proml
+		adds	Upr_proml
+		sach	Upr_out	;����������
+;FLF end2 
+		
+		bldd	Upr_out, #(pwm1_offset+eds2)
+        
+        lacc	Flag3
+        sub		#1
+        sacl	Flag3
+        bcnd	andr1, GT
+        splk	#0, Flag3
+        lacc	eds2
+        sub		#30
+        bcnd	andr1, GT
+        lacc	sraz1
+        add		#1
+        sacl	sraz1
+        sub		#1000
+        bcnd	kiv_andr2_1, LT 
+        splk	#1000, sraz1
+        b		andr1
+kiv_andr2_1:
+		splk	#0, intscr
+		splk	#1333, scr1
+		splk	#0, scr2
+		splk	#0, scr_rez
+		splk	#1, contr_scht
+		splk	#0, scht0
+		splk	#148, scht1
+		splk	#148, scht2
+		splk	#148, scht3
+		splk	#0, schet
+        splk	#0, schet2
+        splk	#34, schet4
+        splk	#5, schet5
+        splk	#0, sraz
+        splk	#16, sht1
+        splk	#111111111111b, sht2
+        splk	#0, sht3
+        splk	#272, maus
+        splk	#0, Wz1
+        splk	#0, Wz2
+        splk	#0, Wz3
+        splk	#0, eds1
+        splk	#11b, contr_rej
+        splk	#0, Flag
+        splk	#1000, Flag2
+        splk	#30000, Flag3
+		splk	#0, Flag4
+		splk	#0, Flag5
+		splk	#0, Flag_eds
+		splk	#0, schet_eds
+        splk	#300, traz_vr
+        splk	#0, gamma2
+        splk	#10, st10
+		splk	#0, ttt
+		bldd	ttt, #cmpr1
+		bldd	ttt, #cmpr2
+		bldd	ttt, #cmpr3
+        splk	#0, per
+        splk	#0, per2
+        splk	#0, per3
+        splk	#6, nS3
+		b		andr2
+andr1:  
+        ldp		#00E0h
+        bit	    xint1cr, 9
+        ;bcnd	andr2, NTC
+		bcnd	andr2, TC
+		ldp		#pwm1_page	  
+		bldd	sht2,	#ACTR
+		b		andr3
+andr2:
+        setc	XF
+        ldp		#pwm1_page
+        lacc	sht2
+        or		#1100110011b	
+        sacl	ttt
+        bldd	ttt, #ACTR
+        b		andr3
+
+tufint_vraschatel:
+
+		setc 	SXM
+		ldp     	#adc_page
+		splk    #0101101100101111b , adctrl1	;������ ��� 10 (Un) � 7 �������
+		
+        ldp     #pwm1_page
+;////////////////////////////////////////////////////////////////////////////////////////////////////         
+		;FLF ��������� begin 
+		bldd  	Upit, #(pwm1_offset+Upr_prom)
+		splk    #32686 , K2	;4��, 32368 20��
+		setc	SXM
+		spm		01
+		lt		K2
+		mpyu	Upr_postproml
+		sph		ttt
+		lacl	ttt
+		mpy		Upr_postpromh
+		mac		K1_ , Upr_prom	;K1_ - � atg_tbl 
+		apac
+		sach	Upr_postpromh
+		sacl	Upr_postproml
+		adds	Upr_postproml
+		sach	Upr_postprom	;����������
+		;FLF end
+
+        spm		00
+        lacl	max        ;#0ffffh
+		rpt		#15
+		subc	Upr_postprom
+		sacl	ttt
+		lt		ttt
+		mpyu	K3            ;K3=89
+		spl		magnituda_var    ;�����. magnitude � ����������� �� ���������� �������
+		lacc	magnituda_var
+		sub		#3200			; #2000                       ; ������� ����������� magnitude
+		bcnd	ogr_1, GEQ
+		splk	#3200, magnituda_var     ; #2000
+		b		ogr_2
+ogr_1:	lacc	magnituda_var
+		sub		#3300			 ; #2100
+		bcnd	ogr_2, LEQ
+		splk	#3300, magnituda_var	  ; #2100	
+ogr_2:		
+
+        
+rabota:
+        ldp     #pwm1_page
+        splk	#1, Flag_rabota
+        lacc	magnitude       ;��������� magnitud�
+        ;sub		#14000
+        sub		magnituda_var
+        bcnd	obhot_2, EQ
+        bcnd	umensh_2, GT
+        lacc	magnitude              ;������. magnitud�
+        add		#1
+        sacl	magnitude
+        lacl	Flag_magnitud_2
+        bcnd	vubor_dvij, NEQ
+        b		loder_PWM
+umensh_2:
+        lacc	magnitude              ;����. magnitud�
+        sub		#1
+        sacl	magnitude
+        lacl	Flag_magnitud_2
+        bcnd	vubor_dvij, NEQ
+        b		loder_PWM
+obhot_2:
+        lacl	Flag_magnitud_2
+        bcnd	vubor_dvij, NEQ
+        
+        splk	#1, Flag_magnitud_2
+vubor_dvij:
+        
+vpered_torm:                   ;�������� ������ � �����������
+		
+		;splk	#1, torm
+		lacl	fi               
+		sub		#10		;torm
+		sacl	fi
+		b		loder_PWM
+
+
+torm_1:                           ;���. �������
+
+        ldp     #pwm1_page
+		;splk	#1000, schet
+		;splk	#10, torm
+		splk	#0, Flag_rabota
+		splk	#0, Flag_magnitud_2
+		splk	#0, magnitude	
+		b		end_torm	        
+loder_PWM:
+        call	fi_pwm
+end_torm:        
+   		clrc		sxm
+		;ldp     #0
+		;splk    #032h,IMR          
+	        
+        
+        
+        
+andr3:
+		
+        
+        setc    SXM	
+       
+         mar  * , AR1
+         mar  *-
+         mar  *-
+         spm  0
+         lt   *+
+         mpy  #1  
+         lt   *-
+         mar  *-
+         lph  *-
+         lacl *-
+         add  *-,16
+         lst  #0,*-
+         lst  #1,*
+         ;clrc	XF
+         clrc INTM
+         ret
+
+_xint1: 
+		 setc	XF
+         mar  * , AR1  
+         sst  #1 , *+
+         sst  #0 , *+
+         sach *+
+         sacl *+
+         spm  0
+         sph  *+ ;save PREG
+         spl  *+ 
+         mpy  #1
+         spl  *+ ;save TREG
+
+        LDP		#00E0h
+        SPLK    #05555h, WD_KEY
+	    SPLK    #0AAAAh, WD_KEY
+                
+        ldp		#work_page
+	    ;splk	#1000000000000000b , temp_w_p  ;����� �����
+	    splk	#1000000000000100b , temp_w_p  ;����� �����	
+        bldd	temp_w_p,	#xint1cr
+        
+        ldp		#pwm1_page
+        lacc	sht2
+        or		#1100110011b	
+        sacl	ttt
+        bldd	ttt, #ACTR
+        
+        
+        setc    SXM
+       
+         mar  * , AR1
+         mar  *-
+         mar  *-
+         spm  0
+         lt   *+
+         mpy  #1  
+         lt   *-
+         mar  *-
+         lph  *-
+         lacl *-
+         add  *-,16
+         lst  #0,*-
+         lst  #1,*
+         clrc	XF
+         clrc INTM
+         ret 
+  
+
+_tcfint2: 
+		 ;setc	XF
+         mar  * , AR1  
+         sst  #1 , *+
+         sst  #0 , *+
+         sach *+
+         sacl *+
+         spm  0
+         sph  *+ ;save PREG
+         spl  *+ 
+         mpy  #1
+         spl  *+ ;save TREG
+
+        LDP		#00E0h
+        SPLK    #05555h, WD_KEY
+	    SPLK    #0AAAAh, WD_KEY
+                
+        ldp   	#pwm1_page
+		splk	#0002h, ttt
+		bldd	ttt, #evifrb        
+
+        bldd	sht2, #ACTR
+        
+        
+        setc    SXM
+       
+         mar  * , AR1
+         mar  *-
+         mar  *-
+         spm  0
+         lt   *+
+         mpy  #1  
+         lt   *-
+         mar  *-
+         lph  *-
+         lacl *-
+         add  *-,16
+         lst  #0,*-
+         lst  #1,*
+         ;clrc	XF
+         clrc INTM
+         ret 
+
+
+        
+kiv_actr:
+         ldp     	#pwm1_page
+		 setc		SXM
+		 lacc		sht1
+		 sub		#8
+         sacl		sht1
+         bcnd		kiv_actr3, GEQ
+         splk		#40, sht1
+kiv_actr3:
+         ;splk	 #40, sht1		;!!!
+         lacl	 sht1
+		 clrc    SXM
+		 and     #0000000000111000b
+         add     #nomer_tacta
+         bacc
+		;����� �� ������
+nomer_tacta:      
+		 ;splk	#000011000001b, sht2
+		 splk	#111100111110b, sht2
+		 nop
+		 nop
+		 nop
+		 nop
+		 b		andr5
+		 ;splk	#110000000001b, sht2
+		 splk	#001111111110b, sht2
+		 nop
+		 nop
+		 nop
+		 nop
+		 b		andr5
+		 ;splk	#110000010000b, sht2
+		 splk	#001111101111b, sht2
+		 nop
+		 nop
+		 nop
+		 nop
+		 b		andr5	
+		 ;splk	#000000011100b, sht2
+		 splk	#111111100011b, sht2
+		 nop
+		 nop
+		 nop
+		 nop
+		 b		andr5
+		 ;splk	#000100001100b, sht2
+		 splk	#111011110011b, sht2
+		 nop
+		 nop
+		 nop
+		 nop
+		 b		andr5	
+		 ; splk	#000111000000b, sht2
+		 splk	#111000111111b, sht2
+andr5:   
+		 ret
+
+
+        .end        
